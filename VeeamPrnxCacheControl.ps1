@@ -40,7 +40,7 @@ if ($Mode -eq "WriteThrough") {
 
 if ($Mode -eq "WriteThrough") {
     Write-Host "Connecting to VMware vCenter Server"
-    $vmware = Connect-VIServer -Server vcsa.bdwlab.local -User root -Password vmware -WarningAction SilentlyContinue
+    $vmware = Connect-VIServer -Server localhost -User root -Password vmware -WarningAction SilentlyContinue
     Write-Host "Connected to VMware vCenter Server"
 
     "Getting objects in backup job"
