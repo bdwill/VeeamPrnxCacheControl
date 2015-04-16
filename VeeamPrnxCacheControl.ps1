@@ -40,7 +40,7 @@ if ($Mode -eq "WriteThrough") {
 
 if ($Mode -eq "WriteThrough") {
     Write-Host "Connecting to VMware vCenter Server"
-    $vmware = Connect-VIServer -Server vcenter -User root -Password vmware -WarningAction SilentlyContinue
+    $vmware = Connect-VIServer -Server vcsa.bdwlab.local -User root -Password vmware -WarningAction SilentlyContinue
     Write-Host "Connected to VMware vCenter Server"
 
     "Getting objects in backup job"
@@ -50,7 +50,10 @@ if ($Mode -eq "WriteThrough") {
     # Initiate empty array for VMs to exclude
     [System.Collections.ArrayList]$es = @()
 
-    "Building list of excluded job objects"
+    "Building list of excluded job objects."
+    # Skip if no exclusions were found.
+    if ($excludes -gt 0) {
+
     foreach ($e in $excludes) {
         $e.Name
 
@@ -65,6 +68,7 @@ if ($Mode -eq "WriteThrough") {
         }
 
     }
+}
 
     "Building list of included objects"
     # Initiate empty array for VMs to include
@@ -91,7 +95,7 @@ if ($Mode -eq "WriteThrough") {
     $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
 
     Write-Host "Getting list of included, powered on VMs with PernixData write-back caching enabled"
-    $prnxVMs = Get-PrnxVM | Where-Object {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where -property $_.Name -in -value $is
+    $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
     
     foreach ($vm in $prnxVMs) {
         if ($vm.numWbExternalPeers -eq $null) {

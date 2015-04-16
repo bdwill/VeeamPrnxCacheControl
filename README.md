@@ -5,6 +5,13 @@ This is a repository for mixed PowerShell scripts I have created over time.
 
 This script enables integration between Veeam Backup & Replication and PernixData FVP to allow FVP write back enabled VMs associated with the Veeam backup or replication job to be transitioned to write through before the job runs. Conversely, it also will transition the VMs back to the previous write back state with the correct number of peers.
 
+## Prerequisites 
+*The following must be installed on your Veeam Backup & Replication server before continuing:*
+
+* VMware PowerCLI
+* Veeam PowerShell cmdlets
+* PernixData PowerShell cmdlets
+
 ### Usage
 
 * Download zip file or clone this repository to your machine.
