@@ -1,8 +1,17 @@
+# Parameter to check for not being present to determine if customer is running ent or std?
+
 Param ( 
     [Parameter(Mandatory=$true)][string]$JobName,
     [Parameter(Mandatory=$true)][ValidateSet("WriteBack", "WriteThrough")][string]$Mode
 )
 cls
+
+function WriteLog
+{
+   Param ([string]$logstring)
+   $logstring = "$(Get-Date -format s) - " + $logstring
+   $logstring | out-file -Filepath $logfile -append
+}
 
 Add-PSSnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue
 Add-PSSnapin VeeamPSSnapIn -ErrorAction SilentlyContinue
@@ -11,46 +20,61 @@ $job = Get-VBRJob -Name $JobName
 
 # Verify the job exists
 if (!$job) {
-    Write-Error "Backup job not found!"
+    WriteLog "Backup job not found!"
     Exit 2
 }
 
 $SettingsFile = "C:\Temp\Job."+$job.TargetFile+".Settings.csv"
 
-# Running some initial tests
+# Write through mode
 if ($Mode -eq "WriteThrough") {
     if (Test-Path $SettingsFile) {
-        Write-Error "It seems the script was not properly stopped before this job run. Review $SettingsFile and perform manual clean-up."
-        Exit 2
+        # Remove $SettingsFile if still present when attempting to transition to write through
+        Remove-Item -Path $SettingsFile
     } else {
-        Write-Host "Create the peer settings file: $SettingsFile"
-        $SettingsFileHandle = New-Item $SettingsFile -Type File
+        WriteLog "Creating the peer settings file: $SettingsFile"
+        try {
+          $SettingsFileHandle = New-Item $SettingsFile -Type File  
+        }
+        catch {
+            WriteLog "Failed to create settings file : $($_.Exception.Message)"
+            Exit 2
+        }
+            
     }
-} elseif ($Mode -eq "WriteBack") {
+} 
+
+elseif ($Mode -eq "WriteBack") {
     if (Test-Path $SettingsFile) {
-        Write-Host "Now we just have to revert the acceleration mode."
+        WriteLog "Open settings file for write back transition"
         $SettingsFileHandle = Get-Content $SettingsFile
     } else {
-        Write-Host "If we want to stop, but there are no settings to be reverted, everything's just fine..."
+        WriteLog "Unable to open settings file"
         Exit 0
     }
 }
 
-# It's showtime!
+# Begin code for transitioning VMs
 
 if ($Mode -eq "WriteThrough") {
-    Write-Host "Connecting to VMware vCenter Server"
-    $vmware = Connect-VIServer -Server localhost -User root -Password vmware -WarningAction SilentlyContinue
-    Write-Host "Connected to VMware vCenter Server"
+    WriteLog "Connecting to VMware vCenter Server"
+    try {
+        $vmware = Connect-VIServer -Server localhost -User root -Password vmware -ea stop
+    }
+    catch {
+        WriteLog "Error connecting to vCenter : $($_.Exception.Message)"
+        Exit 1
+    }
+    WriteLog "Connected to VMware vCenter Server"
 
-    "Getting objects in backup job"
+    WriteLog "Getting objects in Veeam backup job: $JobName"
     $objects = $job.GetObjectsInJob() | ?{$_.Type -eq "Include"}
     $excludes = $job.GetObjectsInJob() | ?{$_.Type -eq "Exclude"}
 
     # Initiate empty array for VMs to exclude
     [System.Collections.ArrayList]$es = @()
 
-    "Building list of excluded job objects."
+    WriteLog "Building list of excluded job objects."
     # Skip if no exclusions were found.
     if ($excludes -gt 0) {
 
@@ -70,7 +94,7 @@ if ($Mode -eq "WriteThrough") {
     }
 }
 
-    "Building list of included objects"
+    WriteLog "Building list of included objects"
     # Initiate empty array for VMs to include
     [System.Collections.ArrayList]$is = @()
 
@@ -89,57 +113,69 @@ if ($Mode -eq "WriteThrough") {
             $i = $is.Add($o.Name)
         }
     }
-    Write-Host "Connecting to PernixData FVP Management Server"
+    WriteLog "Connecting to PernixData FVP Management Server"
+    Try {
+            import-module prnxcli -ea Stop
+            $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+        }
+    Catch {
+            WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
+            exit 1
+        }
 
-    Import-Module PrnxCLI -ErrorAction SilentlyContinue
-    $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
-
-    Write-Host "Getting list of included, powered on VMs with PernixData write-back caching enabled"
+    WriteLog "Getting list of included, powered on VMs with PernixData write-back caching enabled"
     $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
-    
+
     foreach ($vm in $prnxVMs) {
-        if ($vm.numWbExternalPeers -eq $null) {
-            $ext_peers = 0
-        } else {
-            $ext_peers = $vm.numWbExternalPeers
+    if ($vm.numWbExternalPeers -eq $null) {
+        $ext_peers = 0
+    } else {
+        $ext_peers = $vm.numWbExternalPeers
+    }
+
+    $VMName = $vm.Name
+    $VMWBPeers = $vm.NumWBPeers
+    $VMWBExternalPeers = $ext_peers
+
+    $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
+    $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
+
+    WriteLog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through mode"
+        
+    Try { 
+        $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
         }
 
-        $VMName = $vm.Name
-        $VMWBPeers = $vm.NumWBPeers
-        $VMWBExternalPeers = $ext_peers
-
-        $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
-        $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
-
-        Write-Host "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into writethrough"
-            
-        Try { 
-            $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
-        }
-        Catch {
-            Write-Error "Failed to transition $VMName : $($_.Exception.Message)"
-            Exit 2
+    Catch {
+        WriteLog "Failed to transition $VMName : $($_.Exception.Message)"
+        Exit 2
         }
     }
-    
-} elseif ($Mode -eq "WriteBack") {
-    Write-Host "Connecting to PernixData FVP Management Server"
 
-    Import-Module PrnxCLI -ErrorAction SilentlyContinue
-    $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+} elseif ($Mode -eq "WriteBack") {
+    WriteLog "Connecting to PernixData FVP Management Server"
+    Try {
+        import-module prnxcli -ea Stop
+        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+    }
+    Catch {
+        WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
+        exit 1
+    }
+    WriteLog "Connected to PernixData FVP Management Server"
 
     foreach ($vm in $SettingsFileHandle) {
         $VMName            = $vm.split(",")[0]
         $VMWBPeers         = $vm.split(",")[1]
         $VMWBExternalPeers = $vm.split(",")[2]
 
-        Write-Host "Transitioning $VMName into writeback mode with $VMWBPeers peers and $VMWBExternalPeers external peers"
+        WriteLog "Transitioning $VMName into write back mode with $VMWBPeers peers and $VMWBExternalPeers external peers"
             
         Try { 
             $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
         }
         Catch {
-            Write-Error "Failed to transition $VMName : $($_.Exception.Message)"
+            WriteLog "Failed to transition $VMName : $($_.Exception.Message)"
             Exit 2
         }
     }
