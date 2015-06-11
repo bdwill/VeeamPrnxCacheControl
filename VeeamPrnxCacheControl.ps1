@@ -1,4 +1,7 @@
+# TO DO
+#
 # Parameter to check for not being present to determine if customer is running ent or std?
+# Remove check for included and excluded objects in backup job.
 
 Param ( 
     [Parameter(Mandatory=$true)][string]$JobName,
@@ -13,8 +16,8 @@ function WriteLog
    $logstring | out-file -Filepath $logfile -append
 }
 
-Add-PSSnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue
-Add-PSSnapin VeeamPSSnapIn -ErrorAction SilentlyContinue
+Add-PSSnapin VMware.VimAutomation.Core -ErrorAction stop
+Add-PSSnapin VeeamPSSnapIn -ErrorAction Stop
 
 $job = Get-VBRJob -Name $JobName
 
