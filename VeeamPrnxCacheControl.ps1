@@ -129,21 +129,14 @@ if ($Mode -eq "WriteThrough") {
     WriteLog "Getting list of included, powered on VMs with PernixData write-back caching enabled"
     $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
 
-    foreach ($vm in $prnxVMs) {
-    if ($vm.numWbExternalPeers -eq $null) {
-        $ext_peers = 0
-    } else {
-        $ext_peers = $vm.numWbExternalPeers
-    }
-
     $VMName = $vm.Name
     $VMWBPeers = $vm.NumWBPeers
-    $VMWBExternalPeers = $ext_peers
+    #$VMWBExternalPeers = $ext_peers
 
-    $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
+    $WriteBackPeerInfo = @($VMName,$VMWBPeers)
     $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
 
-    WriteLog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through mode"
+    WriteLog "Transitioning $VMName (peers: $VMWBPeers) into write through mode"
         
     Try { 
         $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
@@ -170,12 +163,11 @@ if ($Mode -eq "WriteThrough") {
     foreach ($vm in $SettingsFileHandle) {
         $VMName            = $vm.split(",")[0]
         $VMWBPeers         = $vm.split(",")[1]
-        $VMWBExternalPeers = $vm.split(",")[2]
 
         WriteLog "Transitioning $VMName into write back mode with $VMWBPeers peers and $VMWBExternalPeers external peers"
             
         Try { 
-            $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
+            $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -ea Stop
         }
         Catch {
             WriteLog "Failed to transition $VMName : $($_.Exception.Message)"
