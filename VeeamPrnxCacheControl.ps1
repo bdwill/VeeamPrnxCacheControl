@@ -52,7 +52,7 @@ if ($Mode -eq "WriteThrough") {
 
 if ($Mode -eq "WriteThrough") {
     WriteLog "Connecting to VMware vCenter Server"
-    $vmware = Connect-VIServer -Server localhost -User root -Password vmware -WarningAction SilentlyContinue
+    $vmware = Connect-VIServer -Server localhost -User root -Password vmware -WarningAction Stop
     writelog "Connected to VMware vCenter Server"
 
     WriteLog "Getting objects in backup job"
@@ -106,7 +106,7 @@ WriteLog "Connecting to PernixData Management Server"
 
 Try {
         import-module prnxcli -ea Stop
-        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware -ea Stop
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
@@ -131,7 +131,7 @@ foreach ($vm in $prnxVMs) {
     $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
     $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
 
-    writelog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into writethrough"
+    writelog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through"
         
     Try { 
         $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
@@ -148,7 +148,7 @@ writelog "Connecting to PernixData FVP Management Server"
 
 Try {
         import-module prnxcli -ea Stop
-        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware -ea Stop
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
