@@ -14,16 +14,38 @@ cls
 Add-PSSnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue
 Add-PSSnapin VeeamPSSnapIn -ErrorAction SilentlyContinue
 
+# Initialize variables
 $logfilepath = "C:\temp"
 $logfile = $logfilepath + "\fvp_$(get-date -f yyyy_MM_dd_HH_mm_ss).log"
+$passwordfile = $logfilepath + "\fvp_enc_pass.txt"
+$fvp_server = "localhost"
+$vcenter = "vcenter.domain.local"
+$username = "domain\user"
 
 
-$job = Get-VBRJob -Name $JobName
+
+WriteLog "Retrieving encrypted password from file $passwordfile"
+Try { 
+        $enc_pass = Get-Content $passwordfile | ConvertTo-SecureString
+    }
+Catch { 
+        WriteLog "Error retrieving encrypted password"
+        Exit 1
+    }
+
+Try { 
+        $credential = New-Object System.Management.Automation.PsCredential($username, $enc_pass)
+    }
+Catch {
+        WriteLog "Error creating credential object"
+        Exit 1
+    }
 
 # Verify the job exists
+$job = Get-VBRJob -Name $JobName
 WriteLog "Verifying that the job exists"
 if (!$job) {
-    WriteLog "Backup job not found!"
+    WriteLog "Backup job $jobname not found!"
     Exit 2
 }
 
@@ -52,7 +74,7 @@ if ($Mode -eq "WriteThrough") {
 
 if ($Mode -eq "WriteThrough") {
     WriteLog "Connecting to VMware vCenter Server"
-    $vmware = Connect-VIServer -Server localhost -User root -Password vmware -WarningAction Stop
+    $vmware = Connect-VIServer -Server $vcenter -credential $credential
     writelog "Connected to VMware vCenter Server"
 
     WriteLog "Getting objects in backup job"
@@ -106,7 +128,7 @@ WriteLog "Connecting to PernixData Management Server"
 
 Try {
         import-module prnxcli -ea Stop
-        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware -ea Stop
+        $prnx = Connect-PrnxServer -credentials $credential -ea Stop > $null
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
@@ -114,7 +136,7 @@ Catch {
     }
 
 WriteLog "Connected to PernixData Management Server"
-writelog "Getting list of included, powered on VMs with PernixData write-back caching enabled"
+writelog "Getting list of included, powered on VMs with PernixData write-back mode enabled"
 $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
 
 foreach ($vm in $prnxVMs) {
