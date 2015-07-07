@@ -170,7 +170,7 @@ writelog "Connecting to PernixData FVP Management Server"
 
 Try {
         import-module prnxcli -ea Stop
-        $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware -ea Stop
+        $prnx = Connect-PrnxServer -credentials $credential -ea Stop > $null
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
@@ -199,3 +199,4 @@ Remove-Item -Path $SettingsFile
 }
 
 Disconnect-PrnxServer -Connection $prnx > $null
+Disconnect-VIServer -server $vcenter > $null
