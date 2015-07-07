@@ -14,7 +14,9 @@ This script enables integration between Veeam Backup & Replication and PernixDat
 #### This version of the script is to be used with FVP Enterprise.
 
 * Download zip file or clone this repository to your machine.
-* Edit VeeamPrnxCacheControl.ps1 to include the username and password for connecting to vCenter and the PernixData management server.
+* Open a Powershell command prompt on the Veeam server and execute: Read-Host -AsSecureString -prompt "Enter password" | ConvertFrom-SecureString | Out-File fvp_enc_pass.txt 
+* Enter the username and password for the service account or username that is being used for FVP management server.
+* Edit VeeamPrnxCacheControl.ps1 to include the username for connecting to vCenter and the PernixData management server as well as the IP address/FQDN of each server.
 * Temporary files will be stored in c:\temp. Change this if necessary.
 * Edit each Veeam Backup & Replication job, select Storage, Advanced, then Advanced again.
 * In the pre-job script field, enter C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -Command C:\<FOLDER_WHERE_YOU_STORED_SCRIPT>\VeeamPrnxCacheControl.ps1 -JobName 'Your Veeam Job Name Here' -Mode WriteThrough
