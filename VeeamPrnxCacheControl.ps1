@@ -1,3 +1,7 @@
+Param ( 
+    [Parameter(Mandatory=$true)][string]$JobName,
+    [Parameter(Mandatory=$true)][ValidateSet("WriteBack", "WriteThrough")][string]$Mode
+)
 Function WriteLog
 {
    Param ([string]$logstring)
@@ -5,22 +9,16 @@ Function WriteLog
    $logstring | out-file -Filepath $logfile -append
 }
 
-Param ( 
-    [Parameter(Mandatory=$true)][string]$JobName,
-    [Parameter(Mandatory=$true)][ValidateSet("WriteBack", "WriteThrough")][string]$Mode
-)
-cls
-
-Add-PSSnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue
-Add-PSSnapin VeeamPSSnapIn -ErrorAction SilentlyContinue
+Add-PSSnapin VMware.VimAutomation.Core -ErrorAction Stop
+Add-PSSnapin VeeamPSSnapIn -ErrorAction Stop
 
 # Initialize variables
 $logfilepath = "C:\temp"
 $logfile = $logfilepath + "\fvp_$(get-date -f yyyy_MM_dd_HH_mm_ss).log"
 $passwordfile = $logfilepath + "\fvp_enc_pass.txt"
 $fvp_server = "localhost"
-$vcenter = "vcenter.domain.local"
-$username = "domain\user"
+$vcenter = "vcsa.bdwlab.local"
+$username = "bdwlab.local\admin1"
 
 
 
@@ -54,7 +52,7 @@ $SettingsFile = $logfilepath + "\Job."+$job.TargetFile+".Settings.csv"
 # Running some initial tests
 if ($Mode -eq "WriteThrough") {
     if (Test-Path $SettingsFile) {
-        WriteLog "Remove $SettingsFile manually and re-run the job"
+        WriteLog "Warning: $SettingsFile still exists from previous run. Manually remove and re-run the job"
         Exit 2
     } else {
         WriteLog "Created peer settings file: $SettingsFile"
@@ -79,7 +77,9 @@ if ($Mode -eq "WriteThrough") {
 
     WriteLog "Getting objects in backup job"
     $objects = $job.GetObjectsInJob() | ?{$_.Type -eq "Include"}
+    writelog "Objects: $objects"
     $excludes = $job.GetObjectsInJob() | ?{$_.Type -eq "Exclude"}
+    writelog "Excludes: $excludes"
 
     # Initiate empty array for VMs to exclude
     [System.Collections.ArrayList]$es = @()
@@ -92,7 +92,8 @@ if ($Mode -eq "WriteThrough") {
         $e.Name
 
         # If the object added to the job is not a VM, find the contained VMs
-        $view = Get-View -ViObject $e.Name | Get-VIObjectByVIView
+        $view = Get-View -ViewType VirtualMachine -Filter @{"Name" = $e.Name} | Get-VIObjectByVIView
+        writelog View: $view
         if ($view.GetType().Name -ne "VirtualMachineImpl") {
             foreach ($vm in ($view | Get-VM)) {
                 $i = $es.Add($vm.Name)
@@ -109,10 +110,10 @@ WriteLog "Building list of included objects"
 [System.Collections.ArrayList]$is = @()
 
 foreach ($o in $objects) {
-    $o.Name 
+    #$o.Name 
 
     # If the object added to the job is not a VM, find the contained VMs
-    $view = Get-View -ViObject $o.Name | Get-VIObjectByVIView
+    $view = Get-View -ViewType VirtualMachine -Filter @{"Name" = $o.Name} | Get-VIObjectByVIView
     if ($view.GetType().Name -ne "VirtualMachineImpl") {
         foreach ($vm in ($view | Get-VM)) {
             if ($es -notcontains $vm.Name) {
@@ -199,4 +200,4 @@ Remove-Item -Path $SettingsFile
 }
 
 Disconnect-PrnxServer -Connection $prnx > $null
-Disconnect-VIServer -server $vcenter > $null
+if ($vmware) { Disconnect-VIServer -server $vcenter > $null }
