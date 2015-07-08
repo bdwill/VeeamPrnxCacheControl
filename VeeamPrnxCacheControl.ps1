@@ -17,8 +17,8 @@ $logfilepath = "C:\temp"
 $logfile = $logfilepath + "\fvp_$(get-date -f yyyy_MM_dd_HH_mm_ss).log"
 $passwordfile = $logfilepath + "\fvp_enc_pass.txt"
 $fvp_server = "localhost"
-$vcenter = "vcsa.bdwlab.local"
-$username = "bdwlab.local\admin1"
+$vcenter = "vcenter.lan.local"
+$username = "domain\user"
 
 
 
