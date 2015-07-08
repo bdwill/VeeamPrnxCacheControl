@@ -71,15 +71,13 @@ if ($Mode -eq "WriteThrough") {
 # It's showtime!
 
 if ($Mode -eq "WriteThrough") {
-    WriteLog "Connecting to VMware vCenter Server"
+    WriteLog "Connecting to VMware vCenter Server: $vcenter"
     $vmware = Connect-VIServer -Server $vcenter -credential $credential
-    writelog "Connected to VMware vCenter Server"
+    writelog "Connected to VMware vCenter Server: $vcenter"
 
-    WriteLog "Getting objects in backup job"
+    WriteLog "Getting objects in backup job."
     $objects = $job.GetObjectsInJob() | ?{$_.Type -eq "Include"}
-    writelog "Objects: $objects"
     $excludes = $job.GetObjectsInJob() | ?{$_.Type -eq "Exclude"}
-    writelog "Excludes: $excludes"
 
     # Initiate empty array for VMs to exclude
     [System.Collections.ArrayList]$es = @()
@@ -105,7 +103,7 @@ if ($Mode -eq "WriteThrough") {
     }
 }
 
-WriteLog "Building list of included objects"
+WriteLog "Building list of included objects."
 # Initiate empty array for VMs to include
 [System.Collections.ArrayList]$is = @()
 
@@ -125,7 +123,7 @@ foreach ($o in $objects) {
     }
 }
 
-WriteLog "Connecting to PernixData Management Server"
+WriteLog "Connecting to PernixData Management Server: $fvp_server"
 
 Try {
         import-module prnxcli -ea Stop
@@ -136,8 +134,8 @@ Catch {
         exit 1
     }
 
-WriteLog "Connected to PernixData Management Server"
-writelog "Getting list of included, powered on VMs with PernixData write-back mode enabled"
+WriteLog "Connected to PernixData Management Server: $fvp_server"
+writelog "Getting list of included, powered on VMs with PernixData write back mode enabled"
 $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
 
 foreach ($vm in $prnxVMs) {
@@ -154,7 +152,7 @@ foreach ($vm in $prnxVMs) {
     $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
     $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
 
-    writelog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through"
+    writelog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through mode."
         
     Try { 
         $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
@@ -167,7 +165,7 @@ foreach ($vm in $prnxVMs) {
 
 } elseif ($Mode -eq "WriteBack") {
 
-writelog "Connecting to PernixData FVP Management Server"
+writelog "Connecting to PernixData FVP Management Server: $fvp_server"
 
 Try {
         import-module prnxcli -ea Stop
@@ -175,17 +173,18 @@ Try {
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
+        Remove-Item -Path $SettingsFile
         exit 1
     }
 
-WriteLog "Connected to PernixData Management Server"
+WriteLog "Connected to PernixData Management Server: $fvp_server"
 
 foreach ($vm in $SettingsFileHandle) {
     $VMName            = $vm.split(",")[0]
     $VMWBPeers         = $vm.split(",")[1]
     $VMWBExternalPeers = $vm.split(",")[2]
 
-    writelog "Transitioning $VMName into writeback mode with $VMWBPeers peers and $VMWBExternalPeers external peers"
+    writelog "Transitioning $VMName into write back mode with $VMWBPeers peers and $VMWBExternalPeers external peers."
         
     Try { 
         $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
