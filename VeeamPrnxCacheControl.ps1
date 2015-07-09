@@ -2,36 +2,68 @@ Param (
     [Parameter(Mandatory=$true)][string]$JobName,
     [Parameter(Mandatory=$true)][ValidateSet("WriteBack", "WriteThrough")][string]$Mode
 )
-cls
+Function WriteLog
+{
+   Param ([string]$logstring)
+   $logstring = "$(Get-Date -format s) - " + $logstring
+   $logstring | out-file -Filepath $logfile -append
+}
 
-Add-PSSnapin VMware.VimAutomation.Core -ErrorAction SilentlyContinue
-Add-PSSnapin VeeamPSSnapIn -ErrorAction SilentlyContinue
+Add-PSSnapin VMware.VimAutomation.Core -ErrorAction Stop
+Add-PSSnapin VeeamPSSnapIn -ErrorAction Stop
 
-$job = Get-VBRJob -Name $JobName
+# Initialize variables
+$logfilepath = "C:\temp"
+$logfile = $logfilepath + "\fvp_$(get-date -f yyyy_MM_dd_HH_mm_ss).log"
+$passwordfile = $logfilepath + "\fvp_enc_pass.txt"
+$fvp_server = "localhost"
+$vcenter = "vcenter.lan.local"
+$username = "domain\user"
+
+
+
+WriteLog "Retrieving encrypted password from file $passwordfile"
+Try { 
+        $enc_pass = Get-Content $passwordfile | ConvertTo-SecureString
+    }
+Catch { 
+        WriteLog "Error retrieving encrypted password"
+        Exit 1
+    }
+
+Try { 
+        $credential = New-Object System.Management.Automation.PsCredential($username, $enc_pass)
+    }
+Catch {
+        WriteLog "Error creating credential object"
+        Exit 1
+    }
 
 # Verify the job exists
+$job = Get-VBRJob -Name $JobName
+WriteLog "Verifying that the job exists"
 if (!$job) {
-    Write-Error "Backup job not found!"
+    WriteLog "Backup job $jobname not found!"
     Exit 2
 }
 
-$SettingsFile = "C:\Temp\Job."+$job.TargetFile+".Settings.csv"
+$SettingsFile = $logfilepath + "\Job."+$job.TargetFile+".Settings.csv"
 
 # Running some initial tests
 if ($Mode -eq "WriteThrough") {
     if (Test-Path $SettingsFile) {
-        Write-Error "It seems the script was not properly stopped before this job run. Review $SettingsFile and perform manual clean-up."
+        WriteLog "Warning: $SettingsFile still exists from previous run. Manually remove and re-run the job"
         Exit 2
     } else {
-        Write-Host "Create the peer settings file: $SettingsFile"
+        WriteLog "Created peer settings file: $SettingsFile"
         $SettingsFileHandle = New-Item $SettingsFile -Type File
     }
 } elseif ($Mode -eq "WriteBack") {
     if (Test-Path $SettingsFile) {
-        Write-Host "Now we just have to revert the acceleration mode."
+        WriteLog "Transitioning VMs to write back."
         $SettingsFileHandle = Get-Content $SettingsFile
     } else {
-        Write-Host "If we want to stop, but there are no settings to be reverted, everything's just fine..."
+        Writelog "Nothing to change, normal exit"
         Exit 0
     }
 }
@@ -39,18 +71,18 @@ if ($Mode -eq "WriteThrough") {
 # It's showtime!
 
 if ($Mode -eq "WriteThrough") {
-    Write-Host "Connecting to VMware vCenter Server"
-    $vmware = Connect-VIServer -Server localhost -User root -Password vmware -WarningAction SilentlyContinue
-    Write-Host "Connected to VMware vCenter Server"
+    WriteLog "Connecting to VMware vCenter Server: $vcenter"
+    $vmware = Connect-VIServer -Server $vcenter -credential $credential
+    writelog "Connected to VMware vCenter Server: $vcenter"
 
-    "Getting objects in backup job"
+    WriteLog "Getting objects in backup job."
     $objects = $job.GetObjectsInJob() | ?{$_.Type -eq "Include"}
     $excludes = $job.GetObjectsInJob() | ?{$_.Type -eq "Exclude"}
 
     # Initiate empty array for VMs to exclude
     [System.Collections.ArrayList]$es = @()
 
-    "Building list of excluded job objects."
+    WriteLog "Building list of excluded job objects."
     # Skip if no exclusions were found.
     if ($excludes -gt 0) {
 
@@ -58,7 +90,8 @@ if ($Mode -eq "WriteThrough") {
         $e.Name
 
         # If the object added to the job is not a VM, find the contained VMs
-        $view = Get-View -ViObject $e.Name | Get-VIObjectByVIView
+        $view = Get-View -ViewType VirtualMachine -Filter @{"Name" = $e.Name} | Get-VIObjectByVIView
+        writelog View: $view
         if ($view.GetType().Name -ne "VirtualMachineImpl") {
             foreach ($vm in ($view | Get-VM)) {
                 $i = $es.Add($vm.Name)
@@ -70,81 +103,100 @@ if ($Mode -eq "WriteThrough") {
     }
 }
 
-    "Building list of included objects"
-    # Initiate empty array for VMs to include
-    [System.Collections.ArrayList]$is = @()
+WriteLog "Building list of included objects."
+# Initiate empty array for VMs to include
+[System.Collections.ArrayList]$is = @()
 
-    foreach ($o in $objects) {
-        $o.Name 
+foreach ($o in $objects) {
+    #$o.Name 
 
-        # If the object added to the job is not a VM, find the contained VMs
-        $view = Get-View -ViObject $o.Name | Get-VIObjectByVIView
-        if ($view.GetType().Name -ne "VirtualMachineImpl") {
-            foreach ($vm in ($view | Get-VM)) {
-                if ($es -notcontains $vm.Name) {
-                    $i = $is.Add($vm.Name)
-                }
+    # If the object added to the job is not a VM, find the contained VMs
+    $view = Get-View -ViewType VirtualMachine -Filter @{"Name" = $o.Name} | Get-VIObjectByVIView
+    if ($view.GetType().Name -ne "VirtualMachineImpl") {
+        foreach ($vm in ($view | Get-VM)) {
+            if ($es -notcontains $vm.Name) {
+                $i = $is.Add($vm.Name)
             }
-        } else {
-            $i = $is.Add($o.Name)
         }
+    } else {
+        $i = $is.Add($o.Name)
     }
-    Write-Host "Connecting to PernixData FVP Management Server"
+}
 
-    Import-Module PrnxCLI -ErrorAction SilentlyContinue
-    $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+WriteLog "Connecting to PernixData Management Server: $fvp_server"
 
-    Write-Host "Getting list of included, powered on VMs with PernixData write-back caching enabled"
-    $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
-    
-    foreach ($vm in $prnxVMs) {
-        if ($vm.numWbExternalPeers -eq $null) {
-            $ext_peers = 0
-        } else {
-            $ext_peers = $vm.numWbExternalPeers
-        }
-
-        $VMName = $vm.Name
-        $VMWBPeers = $vm.NumWBPeers
-        $VMWBExternalPeers = $ext_peers
-
-        $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
-        $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
-
-        Write-Host "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into writethrough"
-            
-        Try { 
-            $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
-        }
-        Catch {
-            Write-Error "Failed to transition $VMName : $($_.Exception.Message)"
-            Exit 2
-        }
+Try {
+        import-module prnxcli -ea Stop
+        $prnx = Connect-PrnxServer -NameOrIpAddress $fvp_server -credentials $credential -ea Stop > $null
     }
-    
+Catch {
+        WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
+        exit 1
+    }
+
+WriteLog "Connected to PernixData Management Server: $fvp_server"
+writelog "Getting list of included, powered on VMs with PernixData write back enabled."
+$prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
+
+foreach ($vm in $prnxVMs) {
+    if ($vm.numWbExternalPeers -eq $null) {
+        $ext_peers = 0
+    } else {
+        $ext_peers = $vm.numWbExternalPeers
+    }
+
+    $VMName = $vm.Name
+    $VMWBPeers = $vm.NumWBPeers
+    $VMWBExternalPeers = $ext_peers
+
+    $WriteBackPeerInfo = @($VMName,$VMWBPeers,$VMWBExternalPeers)
+    $WriteBackPeerInfo -join ',' | Out-File $SettingsFile -Append
+
+    writelog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through mode."
+        
+    Try { 
+        $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
+    }
+    Catch {
+        Write-Error "Failed to transition $VMName : $($_.Exception.Message)"
+        Exit 2
+    }
+}
+
 } elseif ($Mode -eq "WriteBack") {
-    Write-Host "Connecting to PernixData FVP Management Server"
 
-    Import-Module PrnxCLI -ErrorAction SilentlyContinue
-    $prnx = Connect-PrnxServer -NameOrIPAddress localhost -UserName root -Password vmware
+writelog "Connecting to PernixData FVP Management Server: $fvp_server"
 
-    foreach ($vm in $SettingsFileHandle) {
-        $VMName            = $vm.split(",")[0]
-        $VMWBPeers         = $vm.split(",")[1]
-        $VMWBExternalPeers = $vm.split(",")[2]
-
-        Write-Host "Transitioning $VMName into writeback mode with $VMWBPeers peers and $VMWBExternalPeers external peers"
-            
-        Try { 
-            $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
-        }
-        Catch {
-            Write-Error "Failed to transition $VMName : $($_.Exception.Message)"
-            Exit 2
-        }
+Try {
+        import-module prnxcli -ea Stop
+        $prnx = Connect-PrnxServer -NameOrIpAddress $fvp_server -credentials $credential -ea Stop > $null
     }
-    
-    Remove-Item -Path $SettingsFile
+Catch {
+        WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
+        Remove-Item -Path $SettingsFile
+        exit 1
+    }
+
+WriteLog "Connected to PernixData Management Server: $fvp_server"
+
+foreach ($vm in $SettingsFileHandle) {
+    $VMName            = $vm.split(",")[0]
+    $VMWBPeers         = $vm.split(",")[1]
+    $VMWBExternalPeers = $vm.split(",")[2]
+
+    writelog "Transitioning $VMName into write back mode with $VMWBPeers peers and $VMWBExternalPeers external peers."
+        
+    Try { 
+        $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
+    }
+    Catch {
+        WriteLog "Failed to transition $VMName : $($_.Exception.Message)"
+        Exit 2
+    }
+}
+
+Remove-Item -Path $SettingsFile
 }
 
 Disconnect-PrnxServer -Connection $prnx > $null
+if ($vmware) { Disconnect-VIServer -server $vcenter > $null }
