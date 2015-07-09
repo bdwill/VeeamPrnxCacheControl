@@ -169,7 +169,7 @@ writelog "Connecting to PernixData FVP Management Server: $fvp_server"
 
 Try {
         import-module prnxcli -ea Stop
-        $prnx = Connect-PrnxServer -credentials $credential -ea Stop > $null
+        $prnx = Connect-PrnxServer -NameOrIpAddress $fvp_server -credentials $credential -ea Stop > $null
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
