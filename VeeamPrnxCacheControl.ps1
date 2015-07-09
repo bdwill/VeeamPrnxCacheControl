@@ -60,7 +60,7 @@ if ($Mode -eq "WriteThrough") {
     }
 } elseif ($Mode -eq "WriteBack") {
     if (Test-Path $SettingsFile) {
-        WriteLog "Transitioning VMs to write back"
+        WriteLog "Transitioning VMs to write back."
         $SettingsFileHandle = Get-Content $SettingsFile
     } else {
         Writelog "Nothing to change, normal exit"
@@ -127,7 +127,7 @@ WriteLog "Connecting to PernixData Management Server: $fvp_server"
 
 Try {
         import-module prnxcli -ea Stop
-        $prnx = Connect-PrnxServer -credentials $credential -ea Stop > $null
+        $prnx = Connect-PrnxServer -NameOrIpAddress $fvp_server -credentials $credential -ea Stop > $null
     }
 Catch {
         WriteLog "Error connecting to FVP Management Server: $($_.Exception.Message)"
@@ -135,7 +135,7 @@ Catch {
     }
 
 WriteLog "Connected to PernixData Management Server: $fvp_server"
-writelog "Getting list of included, powered on VMs with PernixData write back mode enabled"
+writelog "Getting list of included, powered on VMs with PernixData write back enabled."
 $prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
 
 foreach ($vm in $prnxVMs) {
