@@ -1,5 +1,6 @@
 Param ( 
     [Parameter(Mandatory=$true)][string]$JobName,
+    [Parameter(Mandatory=$true)][string]$FVPCluster,
     [Parameter(Mandatory=$true)][ValidateSet("WriteBack", "WriteThrough")][string]$Mode
 )
 Function WriteLog
@@ -136,7 +137,7 @@ Catch {
 
 WriteLog "Connected to PernixData Management Server: $fvp_server"
 writelog "Getting list of included, powered on VMs with PernixData write back enabled."
-$prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name }
+$prnxVMs = Get-PrnxVM | Where {($_.powerState -eq "poweredOn") -and ($_.effectivePolicy -eq "7")} | Where { $is -contains $_.Name } | Where { $_.flashCluster -eq $FVPCluster}
 
 foreach ($vm in $prnxVMs) {
     if ($vm.numWbExternalPeers -eq $null) {
@@ -155,7 +156,7 @@ foreach ($vm in $prnxVMs) {
     writelog "Transitioning $VMName (peers: $VMWBPeers, external: $VMWBExternalPeers) into write through mode."
         
     Try { 
-        $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteThrough -ea Stop
+        Add-PrnxVirtualMachineToFlashCluster -FVPCluster $FVPCluster -name $VMName -writethrough 
     }
     Catch {
         Write-Error "Failed to transition $VMName : $($_.Exception.Message)"
@@ -187,7 +188,8 @@ foreach ($vm in $SettingsFileHandle) {
     writelog "Transitioning $VMName into write back mode with $VMWBPeers peers and $VMWBExternalPeers external peers."
         
     Try { 
-        $CacheMode = Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
+        Remove-PrnxObjectFromFVPCluster -Name $VMName
+        Set-PrnxAccelerationPolicy -Name $VMName -WriteBack -NumWBPeers $VMWBPeers -NumWBExternalPeers $VMWBExternalPeers -ea Stop
     }
     Catch {
         WriteLog "Failed to transition $VMName : $($_.Exception.Message)"
