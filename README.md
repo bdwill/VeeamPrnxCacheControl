@@ -13,11 +13,11 @@ This script enables integration between Veeam Backup & Replication and PernixDat
 
 #### This version of the script is to be used with FVP Enterprise.
 
-* Download zip file or clone this repository to your machine.
-* Open a Powershell command prompt on the Veeam server and execute: Read-Host -AsSecureString -prompt "Enter password" | ConvertFrom-SecureString | Out-File fvp_enc_pass.txt 
-* Enter the username and password for the service account or username that is being used for FVP management server.
-* Edit VeeamPrnxCacheControl.ps1 to include the username for connecting to vCenter and the PernixData management server as well as the IP address/FQDN of each server.
-* Temporary files will be stored in c:\temp. Change this if necessary.
-* Edit each Veeam Backup & Replication job, select Storage, Advanced, then Advanced again.
-* In the pre-job script field, enter C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -Command C:\<FOLDER_WHERE_YOU_STORED_SCRIPT>\VeeamPrnxCacheControl.ps1 -JobName 'Your Veeam Job Name Here' -Mode WriteThrough
-* In the post-job script field, enter C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -Command C:\<FOLDER_WHERE_YOU_STORED_SCRIPT>\VeeamPrnxCacheControl.ps1 -JobName 'Your Veeam Job Name Here' -Mode WriteBack
+* Download the zip file or clone this repository to the Veeam backup server.
+* Extract both files: VeeamPrnxCacheControl.ps1 and SetPassword.ps1 to c:\veeamprnx or the directory of your choice.
+* Open a Powershell command prompt on the Veeam server, cd to c:\veeamprnx and run .\SetPassword.ps1 and enter the password for the username that is used to connect to the PernixData Management Server. A new file will be created: fvp_enc_pass.txt. This contains an encrypted copy of the password and will be used by the script to run.
+* Edit VeeamPrnxCacheControl.ps1 to include the username for connecting to vCenter and the PernixData Management Server as well as the IP address/FQDN of each server.
+* Files will be stored in c:\veeamprnx. Change this if necessary.
+* Edit each Veeam Backup & Replication job to use VeeamPrnxCacheControl.ps1 for pre and post job processing. To do this, edit the job then select Storage, Advanced, then Advanced again.
+* In the pre-job script field, enter C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -Command C:\veeamprnx\VeeamPrnxCacheControl.ps1 -Mode WriteThrough
+* In the post-job script field, enter C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -Command C:\veeamprnx\VeeamPrnxCacheControl.ps1 -Mode WriteBack
